@@ -45,6 +45,11 @@ input_size = X_train_norm.shape[1]
 output_size = 24 # number of hours in a day
 rms_only_model = RMS_model(input_size, hidden_sizes, output_size)
 rms_only_model, loss_hist, acc_hist = train_RMS_model(X_train_norm, y_train, rms_only_model, num_epochs)
+
+#for param in rms_only_model.parameters():
+#    print(type(param), param.size(), param)
+
 plot_loss_accuracy(loss_hist, acc_hist)
 rmse_hour, accuracy_hour = evaluate_model_by_hour(X_test, y_test, rms_only_model, scaler)
 plot_loss_accuracy(rmse_hour, accuracy_hour)
+
