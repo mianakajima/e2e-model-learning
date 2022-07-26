@@ -20,6 +20,7 @@ from model_setup import *
 from train_eval import train_RMS_model
 from train_eval import plot_loss_accuracy
 from train_eval import evaluate_model_by_hour
+from train_eval import train_stochastic_model
 
 # Read in cleaned data
 X = pd.read_csv('../data/processed_data/pjm_load_data_2008-11_with_features.csv')
@@ -53,3 +54,7 @@ plot_loss_accuracy(loss_hist, acc_hist)
 rmse_hour, accuracy_hour = evaluate_model_by_hour(X_test, y_test, rms_only_model, scaler)
 plot_loss_accuracy(rmse_hour, accuracy_hour)
 
+opt_weights = {'c_ramp': 0.4,
+               'gamma_under': 50.0,
+               'gamma_over': 0.5}
+stochastic_model, stochastic_loss, stochastic_acc = train_stochastic_model(X_train_norm, y_train, rms_only_model, 1, opt_weights)
