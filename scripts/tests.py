@@ -6,6 +6,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from model_setup import *
 import pandas as pd
+from train_eval import evaluate_model_by_hour
 
 # Scratch/tests to make sure functions work
 
@@ -109,6 +110,9 @@ print("New y_2: \n", new_y_2)
 loss = task_loss(new_y, test_y, opt_weights)
 print("loss: \n", loss)
 
-# TODO: Make it so loss function returns average loss across batch items 
 loss_2 = task_loss(new_y_2, test_y_2, opt_weights)
-print("loss2: \n", loss)
+print("loss2: \n", loss_2)
+
+# test eval_model_by_hour
+
+rmse, acc = evaluate_model_by_hour(X_test, y_test, test_stochastic, scaler, "opt", test_rms)

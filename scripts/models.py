@@ -1,12 +1,9 @@
 import torch
 import torch.nn as nn
 from torch.distributions.normal import Normal
-import numpy as np
 from qpth.qp import QPFunction
+from torch.nn.parameter import Parameter
 
-import cvxopt
-from cvxopt import matrix
-from cvxopt import solvers
 
 #TODO: Class Constants?
 ## RMS Neural Network
@@ -18,12 +15,14 @@ class RMS_model(nn.Module):
         self.layer2 = nn.Linear(hidden_sizes[0], hidden_sizes[1])
         self.layer3 = nn.Linear(hidden_sizes[1], output_size)
 
-    def calculate_sigma(self, pred, actual):
+        self.sigma = Parameter(torch.tensor([1]).repeat(24).float())
+
+    def set_sigma(self, pred, actual):
         """
         Return RMSE of errors
         """
         sigma = (pred - actual).square().mean(axis = 0).sqrt()
-        return sigma.expand(actual.shape[0], 24)
+        self.sigma.data = sigma
 
     def forward(self, x, y_actual):
         x = self.layer1(x)
@@ -32,8 +31,7 @@ class RMS_model(nn.Module):
         x = nn.ReLU()(x)
         x = self.layer3(x)
 
-        sigma = self.calculate_sigma(x, y_actual)
-        return x, sigma
+        return x, self.sigma.expand(x.shape[0], 24)
 
 
 
@@ -80,14 +78,14 @@ class stochastic_opt_model(nn.Module):
         Q = torch.diag(dz2 + 1)
 
         dz = self.calc_dz(x, mu, sigma)
-        p = dz - mu
-        solver = QPFunction()
+        p = dz + x - mu
+        solver = QPFunction(verbose=False)
         return torch.squeeze(solver(Q, p, self.G, self.h, self.e, self.e))
 
     def forward(self, x, mu, sigma):
 
         max_iteration = 10
-        diff = 1e-10
+        diff = 0.001
 
         #Number of batches
         n_batch = x.shape[0]
@@ -98,23 +96,26 @@ class stochastic_opt_model(nn.Module):
         mu_no_grad = mu.detach()
         sigma_no_grad = sigma.detach()
 
+        # Solve QP for each (X, y) pair
         for batch in range(n_batch):
 
             mu_batch = mu_no_grad[batch]
             sigma_batch = sigma_no_grad[batch]
             x_batch = x_no_grad[batch]
 
+            # Iterate until convergence or max_iterations reached
             for i in range(max_iteration):
-                #print(i)
                 # Calculate P, q  needed for optimization
                 old_x = x_batch
-                x_no_grad = self.solve_QP(x_batch, mu_batch, sigma_batch)
-                if(torch.linalg.norm(old_x - x) < diff):
+                delta_x = self.solve_QP(old_x, mu_batch, sigma_batch)
+                difference = torch.linalg.norm(delta_x)
+                print(f'Iteration {i} delta x: {difference}')
+                x_batch = old_x + delta_x
+                if(difference < diff):
                     break
 
-             # Gradient producing iteration
-
-            x = torch.unsqueeze(self.solve_QP(x[0], mu[0], sigma[0]), 0)
-            all_outputs = torch.cat((all_outputs, x))
+            # Gradient producing iteration
+            batch_solution = torch.unsqueeze(x_batch + self.solve_QP(x_batch, mu[batch], sigma[batch]), 0)
+            all_outputs = torch.cat((all_outputs, batch_solution))
 
         return(all_outputs)

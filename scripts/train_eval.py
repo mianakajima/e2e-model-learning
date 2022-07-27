@@ -32,6 +32,7 @@ def train_RMS_model(X_train, y_train, model, num_epochs):
     accuracy_hist = [0] * num_epochs
 
     for epoch in range(num_epochs):
+        print("Epoch: ", epoch)
         for X_batch, y_batch in dataloader:
             pred, _ = model(X_batch, y_batch)
             mse = loss_fn(pred, y_batch)
@@ -48,19 +49,24 @@ def train_RMS_model(X_train, y_train, model, num_epochs):
         loss_hist[epoch] /= len(dataloader)
         accuracy_hist[epoch] /= len(dataloader)
 
+    model.eval()
+    pred, _ = model(X_train, y_train)
+    model.set_sigma(pred, y_train)
+
     return model, loss_hist, accuracy_hist
 
 def task_loss(pred, y_actual, opt_weights):
-    """ Returns generation cost of prediction."""
+    """ Returns generation cost of prediction (average per day)."""
     under_gen = opt_weights['gamma_under'] * torch.maximum(y_actual - pred, torch.tensor(0).repeat(24))
     over_gen = opt_weights['gamma_over'] * torch.maximum(pred - y_actual, torch.tensor(0).repeat(24))
     error_cost = 0.5*(torch.square(y_actual - pred))
-    total_cost = torch.sum(under_gen + over_gen + error_cost)
+    # average cost per day
+    total_cost = (under_gen + over_gen + error_cost).sum(1).mean()
 
     return total_cost
 
 
-def train_stochastic_model(X_train, y_train, rms_model, number_epochs, opt_weights):
+def train_optimization_model(X_train, y_train, rms_model, number_epochs, opt_weights):
     """
     TODO: make this more readable
     Trains the neural network (RMSE only portion).
@@ -79,7 +85,7 @@ def train_stochastic_model(X_train, y_train, rms_model, number_epochs, opt_weigh
     torch.manual_seed(seed)
     model = stochastic_opt_model(opt_weights)
     td = TensorDataset(X_train, y_train)
-    dataloader = DataLoader(td, batch_size = 2, shuffle = True)
+    dataloader = DataLoader(td, batch_size = batch_size, shuffle = True)
 
     optimizer = torch.optim.Adam(rms_model.parameters(), lr = lr)
 
@@ -88,11 +94,11 @@ def train_stochastic_model(X_train, y_train, rms_model, number_epochs, opt_weigh
     accuracy_hist = [0] * number_epochs
 
     for epoch in range(number_epochs):
+        print("Epoch: ", epoch)
         for X_batch, y_batch in dataloader:
+            # Train initial model
             rms_model.train()
             mu, sigma = rms_model(X_batch, y_batch)
-            print("mu", mu)
-            print("sigma", sigma)
             pred = model(mu, mu, sigma)
             loss = task_loss(pred, y_batch, opt_weights)
             loss.backward()
@@ -110,7 +116,7 @@ def train_stochastic_model(X_train, y_train, rms_model, number_epochs, opt_weigh
     return model, loss_hist, accuracy_hist
 
 
-def plot_loss_accuracy(loss_hist, accuracy_hist):
+def plot_loss_accuracy(loss_hist, accuracy_hist, save_dir, show_plot = False):
 
     fig = plt.figure(figsize=(12, 5))
     ax = fig.add_subplot(1, 2, 1)
@@ -123,24 +129,39 @@ def plot_loss_accuracy(loss_hist, accuracy_hist):
     ax.set_title("Accuracy (Predicted/Actual)", size=15)
     ax.set_xlabel('Epoch', size=15)
     ax.tick_params(axis='both', which='major', labelsize=15)
-    plt.show()
+    # save figure
+    plt.savefig(save_dir)
 
-def evaluate_model_by_hour(X_test, y_test, model, scaler):
+    if show_plot:
+        plt.show()
+
+
+
+def evaluate_model_by_hour(X_test, y_test, eval_model, scaler, model_type, rms_model = None):
     """
     Returns the RMSE and accuracy by hour of day.
     :param X_test:
     :param y_test:
-    :param model:
+    :param eval_model: model you would like to evaluate
     :param scaler: sklearn scaler
+    :param model_type: Either "RMS" or "opt"
+    :param rms_model: Only needs to be supplied when evaluating the optimization model
     :return:
     """
+    assert model_type in ["RMS", "opt"]
 
     # normalize X_test and convert to tensors
     X_test_norm = scaler.transform(X_test)
     X_test_norm = torch.from_numpy(X_test_norm).float()
     y_test = torch.from_numpy(y_test.values).float()
 
-    pred, _ = model(X_test_norm, y_test)
+    if(model_type == "RMS"):
+        eval_model.eval()
+        pred, _ = eval_model(X_test_norm, y_test)
+    if(model_type == "opt"):
+        rms_model.eval()
+        mu, sigma = rms_model(X_test_norm, y_test)
+        pred = eval_model(mu, mu, sigma)
 
     # compute rmse and accuracy for every hour
     rmse = [0] * 24

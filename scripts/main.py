@@ -20,7 +20,10 @@ from model_setup import *
 from train_eval import train_RMS_model
 from train_eval import plot_loss_accuracy
 from train_eval import evaluate_model_by_hour
-from train_eval import train_stochastic_model
+from train_eval import train_optimization_model
+
+# function run time
+import time
 
 # Read in cleaned data
 X = pd.read_csv('../data/processed_data/pjm_load_data_2008-11_with_features.csv')
@@ -47,14 +50,31 @@ output_size = 24 # number of hours in a day
 rms_only_model = RMS_model(input_size, hidden_sizes, output_size)
 rms_only_model, loss_hist, acc_hist = train_RMS_model(X_train_norm, y_train, rms_only_model, num_epochs)
 
-#for param in rms_only_model.parameters():
-#    print(type(param), param.size(), param)
 
-plot_loss_accuracy(loss_hist, acc_hist)
-rmse_hour, accuracy_hour = evaluate_model_by_hour(X_test, y_test, rms_only_model, scaler)
-plot_loss_accuracy(rmse_hour, accuracy_hour)
+plot_loss_accuracy(loss_hist, acc_hist, '../figures/RMSE_loss.png')
+rmse_hour, accuracy_hour = evaluate_model_by_hour(X_test, y_test, rms_only_model, scaler, "RMS")
+plot_loss_accuracy(rmse_hour, accuracy_hour, '../figures/RMSE_loss_by_hour.png')
 
+
+# Now, use the stochastic model
 opt_weights = {'c_ramp': 0.4,
                'gamma_under': 50.0,
                'gamma_over': 0.5}
-stochastic_model, stochastic_loss, stochastic_acc = train_stochastic_model(X_train_norm, y_train, rms_only_model, 1, opt_weights)
+
+optimization_start = time.time()
+stochastic_model, stochastic_loss, stochastic_acc = train_optimization_model(X_train_norm, y_train, rms_only_model, num_epochs,
+                                                                             opt_weights)
+optimization_end = time.time()
+optimization_total = optimization_end - optimization_start
+print("Optimization training run time: ", optimization_total)
+
+plot_loss_accuracy(stochastic_loss, stochastic_acc, '../figures/stochastic_loss.png')
+
+opt_eval_start = time.time()
+rmse_opt_hour, accuracy_opt_hour = evaluate_model_by_hour(X_test, y_test, stochastic_model, scaler, "opt", rms_only_model)
+opt_eval_end = time.time()
+opt_eval_total = opt_eval_end - opt_eval_start
+print("Optimization evaluation run time:", opt_eval_total)
+
+plot_loss_accuracy(rmse_opt_hour, accuracy_opt_hour, '../figures/stochastic_loss_by_hour.png')
+
