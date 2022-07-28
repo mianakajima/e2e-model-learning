@@ -7,7 +7,7 @@ from models import stochastic_opt_model
 
 import matplotlib.pyplot as plt
 
-def train_RMS_model(X_train, y_train, model, num_epochs):
+def train_RMS_model(X_train, y_train, model, num_epochs, opt_weights):
     """
     TODO: make this more readable
     Trains the neural network (RMSE only portion).
@@ -15,6 +15,7 @@ def train_RMS_model(X_train, y_train, model, num_epochs):
     :param y_train: Torch tensor of training data targets
     :param model: Torch NN model
     :param num_epochs: Number of epochs model should train for
+    :param opt_weights: Weights for optimization (task loss)
     :return: trained model, loss history, accuracy history
     """
     # set seed
@@ -30,6 +31,7 @@ def train_RMS_model(X_train, y_train, model, num_epochs):
     # Initialize outputs
     loss_hist = [0] * num_epochs
     accuracy_hist = [0] * num_epochs
+    task_loss_hist = [0] * num_epochs
 
     for epoch in range(num_epochs):
         print("Epoch: ", epoch)
@@ -45,23 +47,31 @@ def train_RMS_model(X_train, y_train, model, num_epochs):
             # calculate % predicted / actual
             is_correct = torch.div(pred, y_batch)
             accuracy_hist[epoch] += is_correct.mean().item()
+            task_loss_hist[epoch] += task_loss(pred, y_batch, opt_weights).item()
+
         # get average over dataset
         loss_hist[epoch] /= len(dataloader)
         accuracy_hist[epoch] /= len(dataloader)
+        task_loss_hist[epoch] /= len(dataloader)
 
     model.eval()
     pred, _ = model(X_train, y_train)
     model.set_sigma(pred, y_train)
 
-    return model, loss_hist, accuracy_hist
+    return model, loss_hist, accuracy_hist, task_loss_hist
 
-def task_loss(pred, y_actual, opt_weights):
-    """ Returns generation cost of prediction (average per day)."""
+def task_loss(pred, y_actual, opt_weights, per_hour = False):
+    """ Returns generation cost of prediction (average per day).
+    :param per_hour: whether to average per hour (True) or by day (False)
+    """
     under_gen = opt_weights['gamma_under'] * torch.maximum(y_actual - pred, torch.tensor(0).repeat(24))
     over_gen = opt_weights['gamma_over'] * torch.maximum(pred - y_actual, torch.tensor(0).repeat(24))
     error_cost = 0.5*(torch.square(y_actual - pred))
     # average cost per day
-    total_cost = (under_gen + over_gen + error_cost).sum(1).mean()
+    if not per_hour:
+        total_cost = (under_gen + over_gen + error_cost).sum(1).mean()
+    else:
+        total_cost = (under_gen + over_gen + error_cost).mean(0)
 
     return total_cost
 
@@ -87,11 +97,12 @@ def train_optimization_model(X_train, y_train, rms_model, number_epochs, opt_wei
     td = TensorDataset(X_train, y_train)
     dataloader = DataLoader(td, batch_size = batch_size, shuffle = True)
 
-    optimizer = torch.optim.Adam(rms_model.parameters(), lr = lr)
+    optimizer = torch.optim.Adam(rms_model.parameters(), lr = lr_opt)
 
     # Initialize outputs
     loss_hist = [0] * number_epochs
     accuracy_hist = [0] * number_epochs
+    task_loss_hist = [0] * number_epochs
 
     for epoch in range(number_epochs):
         print("Epoch: ", epoch)
@@ -109,25 +120,32 @@ def train_optimization_model(X_train, y_train, rms_model, number_epochs, opt_wei
             # calculate % predicted / actual
             is_correct = torch.div(pred, y_batch)
             accuracy_hist[epoch] += is_correct.mean().item()
+            task_loss_hist[epoch] += task_loss(pred, y_batch, opt_weights).item()
         # get average over dataset
         loss_hist[epoch] /= len(dataloader)
         accuracy_hist[epoch] /= len(dataloader)
+        task_loss_hist[epoch] /= len(dataloader)
 
-    return model, loss_hist, accuracy_hist
+    return model, loss_hist, accuracy_hist, task_loss_hist
 
 
-def plot_loss_accuracy(loss_hist, accuracy_hist, save_dir, show_plot = False):
-
+def plot_loss_accuracy(loss_hist, accuracy_hist, task_loss_hist, save_dir, xlabel, show_plot = False):
+    """Plot RMSE, accuracy and task loss"""
     fig = plt.figure(figsize=(12, 5))
-    ax = fig.add_subplot(1, 2, 1)
+    ax = fig.add_subplot(1, 3, 1)
     ax.plot(loss_hist, lw=3)
     ax.set_title("Loss (RMSE)", size=15)
-    ax.set_xlabel('Epoch', size=15)
+    ax.set_xlabel(xlabel, size=15)
     ax.tick_params(axis='both', which='major', labelsize=15)
-    ax = fig.add_subplot(1, 2, 2)
+    ax = fig.add_subplot(1, 3, 2)
     ax.plot(accuracy_hist, lw=3)
     ax.set_title("Accuracy (Predicted/Actual)", size=15)
-    ax.set_xlabel('Epoch', size=15)
+    ax.set_xlabel(xlabel, size=15)
+    ax.tick_params(axis='both', which='major', labelsize=15)
+    ax = fig.add_subplot(1, 3, 3)
+    ax.plot(task_loss_hist, lw=3)
+    ax.set_title("Task Loss", size=15)
+    ax.set_xlabel(xlabel, size=15)
     ax.tick_params(axis='both', which='major', labelsize=15)
     # save figure
     plt.savefig(save_dir)
@@ -137,7 +155,7 @@ def plot_loss_accuracy(loss_hist, accuracy_hist, save_dir, show_plot = False):
 
 
 
-def evaluate_model_by_hour(X_test, y_test, eval_model, scaler, model_type, rms_model = None):
+def evaluate_model_by_hour(X_test, y_test, eval_model, scaler, model_type, opt_weights, rms_model = None):
     """
     Returns the RMSE and accuracy by hour of day.
     :param X_test:
@@ -145,6 +163,7 @@ def evaluate_model_by_hour(X_test, y_test, eval_model, scaler, model_type, rms_m
     :param eval_model: model you would like to evaluate
     :param scaler: sklearn scaler
     :param model_type: Either "RMS" or "opt"
+    :param opt_weights: Weights for task loss
     :param rms_model: Only needs to be supplied when evaluating the optimization model
     :return:
     """
@@ -167,6 +186,7 @@ def evaluate_model_by_hour(X_test, y_test, eval_model, scaler, model_type, rms_m
     rmse = [0] * 24
     accuracy = [0] * 24
 
+
     for hour in range(24):
         # get predictions and actuals for the hour
         pred_for_hour = pred[:, hour]
@@ -174,4 +194,6 @@ def evaluate_model_by_hour(X_test, y_test, eval_model, scaler, model_type, rms_m
         rmse[hour] = torch.sqrt(torch.mean(torch.square(pred_for_hour - actual_for_hour))).item()
         accuracy[hour] = torch.mean(torch.div(pred_for_hour, actual_for_hour)).item()
 
-    return rmse, accuracy
+    task_loss_avg = task_loss(pred, y_test, opt_weights, per_hour = True).detach().numpy()
+
+    return rmse, accuracy, task_loss_avg

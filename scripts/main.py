@@ -25,6 +25,7 @@ from train_eval import train_optimization_model
 # function run time
 import time
 
+
 # Read in cleaned data
 X = pd.read_csv('../data/processed_data/pjm_load_data_2008-11_with_features.csv')
 y = pd.read_csv('../data/processed_data/load_day.csv')
@@ -44,37 +45,65 @@ X_train_norm = scaler.transform(X_train)
 X_train_norm = torch.from_numpy(X_train_norm).float()
 y_train = torch.from_numpy(y_train.values).float()
 
-# First load forecasting RMS error only model
-input_size = X_train_norm.shape[1]
-output_size = 24 # number of hours in a day
-rms_only_model = RMS_model(input_size, hidden_sizes, output_size)
-rms_only_model, loss_hist, acc_hist = train_RMS_model(X_train_norm, y_train, rms_only_model, num_epochs)
-
-
-plot_loss_accuracy(loss_hist, acc_hist, '../figures/RMSE_loss.png')
-rmse_hour, accuracy_hour = evaluate_model_by_hour(X_test, y_test, rms_only_model, scaler, "RMS")
-plot_loss_accuracy(rmse_hour, accuracy_hour, '../figures/RMSE_loss_by_hour.png')
-
-
-# Now, use the stochastic model
+# Weights for task loss
 opt_weights = {'c_ramp': 0.4,
                'gamma_under': 50.0,
                'gamma_over': 0.5}
 
+
+# First load forecasting RMS error only model
+input_size = X_train_norm.shape[1]
+output_size = 24 # number of hours in a day
+rms_only_model = RMS_model(input_size, hidden_sizes, output_size)
+rms_only_model, loss_hist, acc_hist, task_loss_hist = train_RMS_model(X_train_norm, y_train, rms_only_model, num_epochs, opt_weights)
+
+torch.save(rms_only_model, '../results/rms_only_model.pt')
+
+plot_loss_accuracy(loss_hist, acc_hist, task_loss_hist, '../figures/RMSE_loss.png', "Epochs")
+rmse_hour, accuracy_hour, task_loss_hour = evaluate_model_by_hour(X_test, y_test, rms_only_model, scaler, "RMS", opt_weights)
+plot_loss_accuracy(rmse_hour, accuracy_hour, task_loss_hour, '../figures/RMSE_loss_by_hour.png', "Hour")
+
+
+# Now, use the task loss/stochastic optimization model
 optimization_start = time.time()
-stochastic_model, stochastic_loss, stochastic_acc = train_optimization_model(X_train_norm, y_train, rms_only_model, num_epochs,
+stochastic_model, stochastic_loss, stochastic_acc, stochastic_task = train_optimization_model(X_train_norm, y_train, rms_only_model, num_epochs_opt,
                                                                              opt_weights)
 optimization_end = time.time()
 optimization_total = optimization_end - optimization_start
-print("Optimization training run time: ", optimization_total)
+torch.save(stochastic_model, '../results/optimization_model.pt')
+torch.save(rms_only_model, '../results/task_loss_model.pt')
 
-plot_loss_accuracy(stochastic_loss, stochastic_acc, '../figures/stochastic_loss.png')
+plot_loss_accuracy(stochastic_loss, stochastic_acc, stochastic_task, '../figures/stochastic_loss.png', "Epochs")
 
 opt_eval_start = time.time()
-rmse_opt_hour, accuracy_opt_hour = evaluate_model_by_hour(X_test, y_test, stochastic_model, scaler, "opt", rms_only_model)
+rmse_opt_hour, accuracy_opt_hour, task_opt_hour = evaluate_model_by_hour(X_test, y_test, stochastic_model, scaler, "opt", opt_weights, rms_only_model)
 opt_eval_end = time.time()
 opt_eval_total = opt_eval_end - opt_eval_start
+
+
+plot_loss_accuracy(rmse_opt_hour, accuracy_opt_hour, task_opt_hour, '../figures/stochastic_loss_by_hour.png', "Hour")
+
+# Log the final results
+models = ['RMSE NN', 'Task Loss']
+rmse = [loss_hist[-1], stochastic_loss[-1]]
+accuracy = [acc_hist[-1], stochastic_acc[-1]]
+task_loss = [task_loss_hist[-1], stochastic_task[-1]]
+results = pd.DataFrame({'Model': models,
+                        'RMSE': rmse,
+                        'Accuracy': accuracy,
+                        'Task Loss': task_loss})
+results.to_csv('../results/metrics.csv')
+
+# Save hourly results
+hourly_results = pd.DataFrame({'Hour': range(24),
+                               'RMSEnn_rmse': rmse_hour,
+                               'RMSEnn_acc': accuracy_hour,
+                               'RMSEnn_taskloss': task_loss_hour,
+                               'Taskloss_rmse': rmse_opt_hour,
+                               'Taskloss_acc': accuracy_opt_hour,
+                               'Taskloss_taskloss': task_opt_hour})
+hourly_results.to_csv('../results/hourly_results.csv')
+
+# Print run time for reference
+print("Optimization training run time: ", optimization_total)
 print("Optimization evaluation run time:", opt_eval_total)
-
-plot_loss_accuracy(rmse_opt_hour, accuracy_opt_hour, '../figures/stochastic_loss_by_hour.png')
-
