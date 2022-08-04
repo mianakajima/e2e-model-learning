@@ -18,9 +18,6 @@ def train_RMS_model(X_train, y_train, model, num_epochs, opt_weights):
     :param opt_weights: Weights for optimization (task loss)
     :return: trained model, loss history, accuracy history
     """
-    # set seed
-    # TODO: Not sure if this is working - results look different when running
-    torch.manual_seed(seed)
 
     td = TensorDataset(X_train, y_train)
     dataloader = DataLoader(td, batch_size= batch_size, shuffle = True)
@@ -90,9 +87,7 @@ def train_optimization_model(X_train, y_train, rms_model, number_epochs, opt_wei
             - gamma_under
     :return: trained model, loss history, accuracy history
     """
-    # set seed
-    # TODO: Not sure if this is working - results look different when running
-    torch.manual_seed(seed)
+
     model = stochastic_opt_model(opt_weights)
     td = TensorDataset(X_train, y_train)
     dataloader = DataLoader(td, batch_size = batch_size, shuffle = True)

@@ -5,15 +5,23 @@ from qpth.qp import QPFunction
 from torch.nn.parameter import Parameter
 
 
-#TODO: Class Constants?
 ## RMS Neural Network
 class RMS_model(nn.Module):
 
     def __init__(self, input_size, hidden_sizes, output_size=24):
         super().__init__()
-        self.layer1 = nn.Linear(input_size, hidden_sizes[0])
-        self.layer2 = nn.Linear(hidden_sizes[0], hidden_sizes[1])
-        self.layer3 = nn.Linear(hidden_sizes[1], output_size)
+
+        self.net = nn.Sequential(
+            nn.Linear(input_size, hidden_sizes[0]),
+            nn.BatchNorm1d(hidden_sizes[0]),
+            nn.ReLU(),
+            nn.Dropout(p = 0.2),
+            nn.Linear(hidden_sizes[0], hidden_sizes[1]),
+            nn.BatchNorm1d(hidden_sizes[1]),
+            nn.ReLU(),
+            nn.Dropout(p=0.2),
+            nn.Linear(hidden_sizes[1], output_size)
+        )
 
         self.sigma = Parameter(torch.tensor([1]).repeat(24).float())
 
@@ -25,21 +33,15 @@ class RMS_model(nn.Module):
         self.sigma.data = sigma
 
     def forward(self, x, y_actual):
-        x = self.layer1(x)
-        x = nn.ReLU()(x)
-        x = self.layer2(x)
-        x = nn.ReLU()(x)
-        x = self.layer3(x)
-
+        x = self.net(x)
         return x, self.sigma.expand(x.shape[0], 24)
 
 
-
+## Define model that solves optimization problem
 class stochastic_opt_model(nn.Module):
 
     def __init__(self, opt_weights):
         """
-        :param n: Number of hours in batch
         :param opt_weights: dictionary with the following elements
             - c_ramp
             - gamma_over
@@ -85,7 +87,7 @@ class stochastic_opt_model(nn.Module):
     def forward(self, x, mu, sigma):
 
         max_iteration = 10
-        diff = 0.001
+        diff = 0.00001
 
         #Number of batches
         n_batch = x.shape[0]

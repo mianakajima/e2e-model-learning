@@ -12,7 +12,6 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 
 import torch
-
 # neural net model
 from models import RMS_model
 from model_setup import *
@@ -25,6 +24,8 @@ from train_eval import train_optimization_model
 # function run time
 import time
 
+# set seed
+torch.manual_seed(seed)
 
 # Read in cleaned data
 X = pd.read_csv('../data/processed_data/pjm_load_data_2008-11_with_features.csv')
@@ -45,6 +46,9 @@ X_train_norm = scaler.transform(X_train)
 X_train_norm = torch.from_numpy(X_train_norm).float()
 y_train = torch.from_numpy(y_train.values).float()
 
+emissions_schedule = [0.43, 0.42, 0.40, 0.40, 0.41, 0.41, 0.41, 0.39, 0.34, 0.32, 0.32, 0.32,
+                        0.32, 0.33, 0.34, 0.36, 0.40, 0.43, 0.46, 0.48, 0.48, 0.47, 0.46, 0.44]
+
 # Weights for task loss
 opt_weights = {'c_ramp': 0.4,
                'gamma_under': 50.0,
@@ -57,7 +61,7 @@ output_size = 24 # number of hours in a day
 rms_only_model = RMS_model(input_size, hidden_sizes, output_size)
 rms_only_model, loss_hist, acc_hist, task_loss_hist = train_RMS_model(X_train_norm, y_train, rms_only_model, num_epochs, opt_weights)
 
-torch.save(rms_only_model, '../results/rms_only_model.pt')
+torch.save(rms_only_model.state_dict(), '../results/rms_only_model.pt')
 
 plot_loss_accuracy(loss_hist, acc_hist, task_loss_hist, '../figures/RMSE_loss.png', "Epochs")
 rmse_hour, accuracy_hour, task_loss_hour = evaluate_model_by_hour(X_test, y_test, rms_only_model, scaler, "RMS", opt_weights)
@@ -70,8 +74,8 @@ stochastic_model, stochastic_loss, stochastic_acc, stochastic_task = train_optim
                                                                              opt_weights)
 optimization_end = time.time()
 optimization_total = optimization_end - optimization_start
-torch.save(stochastic_model, '../results/optimization_model.pt')
-torch.save(rms_only_model, '../results/task_loss_model.pt')
+torch.save(stochastic_model.state_dict(), '../results/optimization_model.pt')
+torch.save(rms_only_model.state_dict(), '../results/task_loss_model.pt')
 
 plot_loss_accuracy(stochastic_loss, stochastic_acc, stochastic_task, '../figures/stochastic_loss.png', "Epochs")
 
