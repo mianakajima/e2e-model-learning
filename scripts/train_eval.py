@@ -1,3 +1,4 @@
+import pandas as pd
 import torch
 from torch.utils.data import TensorDataset
 from torch.utils.data import DataLoader
@@ -110,12 +111,12 @@ def train_optimization_model(X_train, y_train, rms_model, number_epochs, opt_wei
             loss.backward()
             optimizer.step()
             optimizer.zero_grad()
-            # log loss history
-            loss_hist[epoch] += loss.item()
+            # log loss history (RMSE)
+            loss_hist[epoch] += (pred - y_batch).square().mean().sqrt().item()
             # calculate % predicted / actual
             is_correct = torch.div(pred, y_batch)
             accuracy_hist[epoch] += is_correct.mean().item()
-            task_loss_hist[epoch] += task_loss(pred, y_batch, opt_weights).item()
+            task_loss_hist[epoch] += loss.item()
         # get average over dataset
         loss_hist[epoch] /= len(dataloader)
         accuracy_hist[epoch] /= len(dataloader)
@@ -178,7 +179,7 @@ def evaluate_model_by_hour(X_test, y_test, eval_model, scaler, model_type, opt_w
         pred = eval_model(mu, mu, sigma)
 
     # compute rmse and accuracy for every hour
-    rmse = [0] * 24
+    mse = [0] * 24
     accuracy = [0] * 24
 
 
@@ -186,9 +187,17 @@ def evaluate_model_by_hour(X_test, y_test, eval_model, scaler, model_type, opt_w
         # get predictions and actuals for the hour
         pred_for_hour = pred[:, hour]
         actual_for_hour = y_test[:, hour]
-        rmse[hour] = torch.sqrt(torch.mean(torch.square(pred_for_hour - actual_for_hour))).item()
+        mse[hour] = torch.sqrt(torch.mean(torch.square(pred_for_hour - actual_for_hour))).item()
         accuracy[hour] = torch.mean(torch.div(pred_for_hour, actual_for_hour)).item()
 
     task_loss_avg = task_loss(pred, y_test, opt_weights, per_hour = True).detach().numpy()
 
-    return rmse, accuracy, task_loss_avg
+    return mse, accuracy, task_loss_avg, pred
+
+
+def convert_pred_tensor_to_pd(pred, dates):
+    """Convert tensor to dataframe for prediction results."""
+    df = pd.DataFrame(pred.detach())
+    df['date'] = dates
+
+    return df
