@@ -10,14 +10,18 @@ import matplotlib.pyplot as plt
 
 def train_RMS_model(X_train, y_train, model, num_epochs, opt_weights):
     """
-    TODO: make this more readable
     Trains the neural network (RMSE only portion).
-    :param X_train: Torch tensor of training data features
-    :param y_train: Torch tensor of training data targets
-    :param model: Torch NN model
-    :param num_epochs: Number of epochs model should train for
-    :param opt_weights: Weights for optimization (task loss)
-    :return: trained model, loss history, accuracy history
+    :param X_train: Torch tensor
+        Training data features
+    :param y_train: Torch tensor
+        Training data targets
+    :param model: Torch NN
+        RMSE loss model
+    :param num_epochs: int
+        Number of epochs model should train for
+    :param opt_weights: dictionary
+        Weights for optimization (task loss). Should have keys 'c_ramp', 'gamma_under', and 'gamma_over'
+    :return: trained model, loss history, accuracy history, task loss history
     """
 
     td = TensorDataset(X_train, y_train)
@@ -60,7 +64,16 @@ def train_RMS_model(X_train, y_train, model, num_epochs, opt_weights):
 
 def task_loss(pred, y_actual, opt_weights, per_hour = False):
     """ Returns generation cost of prediction (average per day).
-    :param per_hour: whether to average per hour (True) or by day (False)
+    :param per_hour: boolean
+        whether to average per hour (True) or by day (False)
+    :param pred: torch tensor
+    :param y_actual: torch tensor
+    :param opt_weights: dictionary
+        Weights for optimization (task loss). Should have keys 'c_ramp', 'gamma_under', and 'gamma_over'
+
+    :return:
+    torch tensor
+        Total task loss either per day or or per hour
     """
     under_gen = opt_weights['gamma_under'] * torch.maximum(y_actual - pred, torch.tensor(0).repeat(24))
     over_gen = opt_weights['gamma_over'] * torch.maximum(pred - y_actual, torch.tensor(0).repeat(24))
@@ -76,18 +89,19 @@ def task_loss(pred, y_actual, opt_weights, per_hour = False):
 
 def train_optimization_model(X_train, y_train, rms_model, number_epochs, opt_weights):
     """
-    TODO: make this more readable
-    Trains the neural network (RMSE only portion).
-    :param X_train: Torch tensor of training data features
-    :param y_train: Torch tensor of training data targets
-    :param rms_model: Torch NN model
-    :param number_epochs: Number of epochs model should train for
-    :param opt_weights: dictionary with the following elements
-            - c_ramp
-            - gamma_over
-            - gamma_under
-    :return: trained model, loss history, accuracy history
-    """
+       Trains the neural network using task loss.
+       :param X_train: Torch tensor
+           Training data features
+       :param y_train: Torch tensor
+           Training data targets
+       :param rms_model: Torch NN
+           RMSE loss model (pre-trained)
+       :param num_epochs: int
+           Number of epochs model should train for
+       :param opt_weights: dictionary
+           Weights for optimization (task loss). Should have keys 'c_ramp', 'gamma_under', and 'gamma_over'
+       :return: trained model, loss history, accuracy history, task loss history
+       """
 
     model = stochastic_opt_model(opt_weights)
     td = TensorDataset(X_train, y_train)
@@ -153,15 +167,24 @@ def plot_loss_accuracy(loss_hist, accuracy_hist, task_loss_hist, save_dir, xlabe
 
 def evaluate_model_by_hour(X_test, y_test, eval_model, scaler, model_type, opt_weights, rms_model = None):
     """
-    Returns the RMSE and accuracy by hour of day.
-    :param X_test:
-    :param y_test:
-    :param eval_model: model you would like to evaluate
+    Evaluate the model - returns the average mean square error, accuracy and task loss per hour of the test set.
+    Additionally returns the predicted values from the model.
+
+    :param X_test: pandas dataframe
+        Test dataset features
+    :param y_test: pandas dataframe
+        Test dataset load
+    :param eval_model: torch model
+        Model you would like to evaluate
     :param scaler: sklearn scaler
-    :param model_type: Either "RMS" or "opt"
-    :param opt_weights: Weights for task loss
-    :param rms_model: Only needs to be supplied when evaluating the optimization model
+    :param model_type: str
+        Either "RMS" or "opt"
+    :param opt_weights: dictionary
+        Weights for optimization (task loss). Should have keys 'c_ramp', 'gamma_under', and 'gamma_over'
+    :param rms_model: Torch model or None (default)
+        Only needs to be supplied when evaluating the optimization model
     :return:
+        mse (numpy array), accuracy (numpy array), task_loss_avg (numpy array), pred (torch tensor)
     """
     assert model_type in ["RMS", "opt"]
 

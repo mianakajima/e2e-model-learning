@@ -42,10 +42,8 @@ class stochastic_opt_model(nn.Module):
 
     def __init__(self, opt_weights):
         """
-        :param opt_weights: dictionary with the following elements
-            - c_ramp
-            - gamma_over
-            - gamma_under
+        :param opt_weights: dictionary
+            Weights for optimization (task loss). Should have keys 'c_ramp', 'gamma_under', and 'gamma_over'
         """
         super().__init__()
         self.opt_weights = opt_weights
@@ -60,9 +58,12 @@ class stochastic_opt_model(nn.Module):
 
     def calc_dz(self, x, mu, sigma):
         """
-        :param mu:
-        :param sigma:
-        :return: d(alpha)/dz
+        Calculate first derivative of optimization problem.
+        :param mu: torch tensor
+        :param sigma: torch tensor
+        :return:
+        torch tensor
+            d(alpha)/dz
         """
         norm_distribution = Normal(mu, sigma)
         cdf = norm_distribution.cdf(x)
@@ -70,12 +71,28 @@ class stochastic_opt_model(nn.Module):
         return torch.squeeze(dz)
 
     def calc_dz2(self, x, mu, sigma):
+        """
+        Calculate first derivative of optimization problem.
+        :param mu: torch tensor
+        :param sigma: torch tensor
+        :return:
+        torch tensor
+            d(alpha)/dz
+        """
         norm_distribution = Normal(mu, sigma)
         pdf = norm_distribution.log_prob(x).exp()
         dz2 = pdf * (self.opt_weights['gamma_over'] + self.opt_weights['gamma_under'])
         return torch.squeeze(dz2)
 
     def solve_QP(self, x, mu, sigma):
+        """
+        Solve quadratic program: find x that minimizes 0.5*(x.T)Qx + (P.T)x with constraint Gx <= h
+        :param x: torch tensor
+            Estimate of solution to QP
+        :param mu: torch tensor
+        :param sigma: torch tensor
+        :return:
+        """
         dz2 = self.calc_dz2(x, mu, sigma)
         Q = torch.diag(dz2 + 1)
 

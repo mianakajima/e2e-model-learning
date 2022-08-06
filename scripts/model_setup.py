@@ -6,7 +6,7 @@ hidden_sizes = [200, 200]
 lr = 0.001
 num_epochs = 50
 # Optimization hyperparameters
-num_epochs_opt = 75
+num_epochs_opt = 25
 lr_opt = 0.00001
 # Shared parameters
 batch_size = 20

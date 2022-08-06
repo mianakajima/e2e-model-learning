@@ -1,12 +1,3 @@
-# Code outline:
-# - Assume that data is already in cleaned format for now (may create a data cleaning function later)
-# - Main function should:
-#   - Run the data through neural net
-#   - Then, take the neural net and run through stochastic optimization
-
-# TODO: Make code structure more readable?
-# TODO: Think of way to save model outputs in a good/systematic way - want to compare different model outputs.
-
 import pandas as pd
 from sklearn.preprocessing import StandardScaler
 import numpy as np
@@ -155,9 +146,15 @@ opt_weights_1 = {'c_ramp': 0.4,
                'gamma_under': 25.0,
                'gamma_over': torch.tensor(25.0/np.mean(emissions_schedule) * emissions_schedule).float()}
 
+# min max scale to increase difference between low emission and high emission times.
+emissions_schedule = (emissions_schedule - np.min(emissions_schedule))/(np.max(emissions_schedule) - np.min(emissions_schedule))
+
+opt_weights_2 = {'c_ramp': 0.4,
+               'gamma_under': 25.0,
+               'gamma_over': torch.tensor(25.0/np.mean(emissions_schedule) * emissions_schedule).float()}
 
 
-weights_list = [opt_weights_0, opt_weights_1]
+weights_list = [opt_weights_0, opt_weights_1, opt_weights_2]
 
 for i, weight in enumerate(weights_list):
 
